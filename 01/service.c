@@ -37,7 +37,6 @@ libverbs RDMA_RC_example.c
 #define MAX_POLL_CQ_TIMEOUT 2000
 #define MSG "SEND operation "
 #define RDMAMSGR "RDMA read operation "
-#define RDMAMSGW "RDMA write operation"
 #define MSG_SIZE (strlen(MSG) + 1)
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 
@@ -650,7 +649,7 @@ static int resources_create(struct resources *res)
 	if (!config.server_name)
 	{
 		strcpy(res->buf, MSG);
-		fprintf(stdout, "going to send the message: '%s'\n", res->buf);
+		fprintf(stdout, "Server: going to send the message: '%s'\n", res->buf);
 	}
 	else
 		memset(res->buf, 0, size);
@@ -854,8 +853,6 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
 	// 设置最小重试接收不足计时器（attr.min_rnr_timer）。
 	attr.min_rnr_timer = 0x12;
 
-
-
 	// COMMENT:使用 GID 和全局路由通常在需要跨多个子网或在不同类型的网络（如 RoCE，RDMA over Converged Ethernet）上通信时使用。
 	// 设置 attr.ah_attr 以定义队列对将要通信的物理路径属性。
 	// : 表明这是一个局部通信，不使用全局路由头（Global Routing Header, GRH）。
@@ -893,7 +890,6 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
 	// ，指定将要修改的队列对属性。
 	flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN |
 			IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
-
 
 	// 使用 ibv_modify_qp 函数根据指定的属性和标志修改队列对状态。
 	rc = ibv_modify_qp(qp, &attr, flags);
@@ -966,7 +962,7 @@ static int modify_qp_to_rts(struct ibv_qp *qp)
  *
  * Description
  * Connect the QP. Transition the server side to RTR, sender side to RTS
- * 
+ *
  * 连接队列对，将服务端变成待接受状态，客户端变成待发送状态
  * 函数的作用是配置和连接队列对（Queue Pair, QP），以便进行 RDMA 通信。这个过程包括设置队列对的状态，以及交换所需的连接信息。以下是函数的详细解释：
  COMMENT:connect_qp是建立 RDMA 连接的关键步骤。它确保了双方使用正确的参数进行通信，并且队列对的状态正确设置以支持数据的发送和接收。
@@ -1003,8 +999,8 @@ static int connect_qp(struct resources *res)
 	}
 	else
 		fprintf(stdout, "using InfiniBand subnet connection\n");
-		// 意味着不需要使用 GID。这种情况下，将 my_gid 清零。这通常用于仅在 InfiniBand 子网内通信的情况。
-		memset(&my_gid, 0, sizeof my_gid);
+	// 意味着不需要使用 GID。这种情况下，将 my_gid 清零。这通常用于仅在 InfiniBand 子网内通信的情况。
+	memset(&my_gid, 0, sizeof my_gid);
 
 	// COMMENT：准备本地连接数据（如内存地址、密钥、队列对编号、LID、GID）并通过 TCP 套接字与远程端交换这些数据。
 	// 设置本地缓冲区地址。htonll 将地址从主机字节顺序转换为网络字节顺序。
@@ -1051,7 +1047,6 @@ static int connect_qp(struct resources *res)
 				p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
 	}
 
-
 	// 将队列对的状态修改为 INIT。
 	// 在这个阶段，队列对从其初始状态（RESET）转换到 INIT 状态。在 INIT 状态下，队列对被配置为具有必要的访问权限和网络参数，但还不能用于发送或接收数据。
 	// 这是队列对生命周期中的第一个激活状态，为后续的数据传输做准备。
@@ -1061,7 +1056,6 @@ static int connect_qp(struct resources *res)
 		fprintf(stderr, "change QP state to INIT failed\n");
 		goto connect_qp_exit;
 	}
-
 
 	// COMMENT：如果是客户端（由 config.server_name 判断），通过调用 post_receive 函数在队列对上准备接收请求。
 	if (config.server_name)
@@ -1074,7 +1068,6 @@ static int connect_qp(struct resources *res)
 		}
 	}
 
-
 	// COMMENT：调用 modify_qp_to_rtr 函数，使用从远程端获取的数据（如对方的队列对编号、LID、GID）将队列对状态修改为 RTR
 	// 在此状态下队列对开始准备接收远程端的数据。
 	rc = modify_qp_to_rtr(res->qp, remote_con_data.qp_num, remote_con_data.lid, remote_con_data.gid);
@@ -1083,7 +1076,6 @@ static int connect_qp(struct resources *res)
 		fprintf(stderr, "failed to modify QP state to RTR\n");
 		goto connect_qp_exit;
 	}
-
 
 	// COMMENT：调用 modify_qp_to_rts 函数将队列对状态修改为 RTS，使其准备好发送数据。
 	// COMMENT：队列对被配置为准备好发送数据。这是队列对完全激活的状态，允许它进行数据的发送和接收操作。
@@ -1284,12 +1276,12 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	// 如果提供了服务器名称（作为最后一个参数），则设置 config.server_name
+	// 如果提供了服务器名称（作为最后一个参数），则设置 config.server_name作为客户端
 	if (optind == argc - 1)
 		config.server_name = argv[optind];
 	if (config.server_name)
 	{
-		printf("servername=%s\n", config.server_name);
+		printf("Client: servername=%s\n", config.server_name);
 	}
 	else if (optind < argc)
 	{
@@ -1319,10 +1311,9 @@ int main(int argc, char *argv[])
 	if (!config.server_name)
 		if (post_send(&res, IBV_WR_SEND))
 		{
-			fprintf(stderr, "failed to post sr\n");
+			fprintf(stderr, "Server: failed to post sr\n");
 			goto main_exit;
 		}
-
 
 	/* in both sides we expect to get a completion */
 	// COMMENT：客户端和服务器端等待完成事件:
@@ -1333,12 +1324,26 @@ int main(int argc, char *argv[])
 		goto main_exit;
 	}
 	/* after polling the completion we have the message in the client buffer too */
+
+	// 如果是客户端那么就打印buffer里面的信息
 	if (config.server_name)
-		fprintf(stdout, "Message is: '%s'\n", res.buf);
+		fprintf(stdout, "\nClient: Message is: '%s'\n\n", res.buf);
 	else
 	{
-		/* setup server buffer with read message */
-		strcpy(res.buf, RDMAMSGR);
+		// 读取用户输入
+		printf("Enter your message: ");
+		if (fgets(res.buf, MSG_SIZE, stdin) != NULL) // 假设 BUFFER_SIZE 是 res.buf 的大小
+		{
+			// 除去可能的换行符
+			res.buf[strcspn(res.buf, "\n")] = 0;
+			printf("Your message: '%s'\n", res.buf);
+		}
+		else
+		{
+			fprintf(stderr, "Error reading input.\n");
+			// 可以选择如何处理输入错误
+		}
+		fprintf(stdout, "\nServer: Message is: '%s'\n\n", res.buf);
 	}
 	/* Sync so we are sure server side has data ready before client tries to read it */
 	if (sock_sync_data(res.sock, 1, "R", &temp_char)) /* just send a dummy char back and forth */
@@ -1356,34 +1361,46 @@ Note that the server has no idea these events have occured */
 		/* First we read contens of server's buffer */
 		if (post_send(&res, IBV_WR_RDMA_READ))
 		{
-			fprintf(stderr, "failed to post SR 2\n");
+			fprintf(stderr, "Client: failed to post SR 2\n");
 			rc = 1;
 			goto main_exit;
 		}
 		if (poll_completion(&res))
 		{
-			fprintf(stderr, "poll completion failed 2\n");
+			fprintf(stderr, "Client: poll completion failed 2\n");
 			rc = 1;
 			goto main_exit;
 		}
-		fprintf(stdout, "Contents of server's buffer: '%s'\n", res.buf);
-		/* Now we replace what's in the server's buffer */
-		strcpy(res.buf, RDMAMSGW);
-		fprintf(stdout, "Now replacing it with: '%s'\n", res.buf);
+		fprintf(stdout, "Client: Contents of server's buffer: '%s'\n", res.buf);
+
+		// 读取用户输入
+		printf("Enter your message: ");
+		if (fgets(res.buf, MSG_SIZE, stdin) != NULL) // 假设 BUFFER_SIZE 是 res.buf 的大小
+		{
+			// 除去可能的换行符
+			res.buf[strcspn(res.buf, "\n")] = 0;
+			printf("Your message: '%s'\n", res.buf);
+		}
+		else
+		{
+			fprintf(stderr, "Error reading input.\n");
+			// 可以选择如何处理输入错误
+		}
+
+		fprintf(stdout, "Client: Now replacing it with: '%s'\n", res.buf);
 		if (post_send(&res, IBV_WR_RDMA_WRITE))
 		{
-			fprintf(stderr, "failed to post SR 3\n");
+			fprintf(stderr, "Client: failed to post SR 3\n");
 			rc = 1;
 			goto main_exit;
 		}
 		if (poll_completion(&res))
 		{
-			fprintf(stderr, "poll completion failed 3\n");
+			fprintf(stderr, "Client: poll completion failed 3\n");
 			rc = 1;
 			goto main_exit;
 		}
 	}
-
 
 	// 使用 sock_sync_data 函数进行简单的数据交换，确保客户端和服务器端同步。
 	/* Sync so server will know that client is done mucking with its memory */
@@ -1394,10 +1411,9 @@ Note that the server has no idea these events have occured */
 		goto main_exit;
 	}
 	if (!config.server_name)
-		fprintf(stdout, "Contents of server buffer: '%s'\n", res.buf);
+		fprintf(stdout, "Server: Contents of server buffer: '%s'\n", res.buf);
 	rc = 0;
 main_exit:
-
 
 	// 在 main_exit 标签处，调用 resources_destroy 清理所有资源。
 	if (resources_destroy(&res))
