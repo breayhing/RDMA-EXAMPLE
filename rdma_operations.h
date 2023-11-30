@@ -79,4 +79,3 @@ int resources_destroy(struct resources *res);
 void print_config(void);
 void usage(const char *argv0);
 int receive_message(struct resources *res, const char *entity);
-s
