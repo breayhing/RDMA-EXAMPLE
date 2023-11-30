@@ -36,7 +36,6 @@ libverbs RDMA_RC_example.c
 /* COMMENT: 轮询时间 timeout in millisec (2 seconds) */
 #define MAX_POLL_CQ_TIMEOUT 2000
 #define MSG "SEND operation "
-#define RDMAMSGR "RDMA read operation "
 #define MSG_SIZE (strlen(MSG) + 1)
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 
@@ -643,16 +642,26 @@ static int resources_create(struct resources *res)
 		rc = 1;
 		goto resources_create_exit;
 	}
-	// 使用 memset 将缓冲区清零。
+	// // 使用 memset 将缓冲区清零。
+	// memset(res->buf, 0, size);
+	// // 如果是服务器端，将消息内容复制到缓冲区中。
+	// if (!config.server_name)
+	// {
+	// 	printf("Enter your message: ");
+	// 	if (fgets(res->buf, MSG_SIZE, stdin) != NULL) // 假设 BUFFER_SIZE 是 res.buf 的大小
+	// 	{
+	// 		// 除去可能的换行符
+	// 		res->buf[strcspn(res->buf, "\n")] = 0;
+	// 	}
+	// 	else
+	// 	{
+	// 		fprintf(stderr, "Error reading input.\n");
+	// 		// 可以选择如何处理输入错误
+	// 	}
+	// 	fprintf(stdout, "Server: going to send the message: '%s'\n", res->buf);
+	// }
+	// else
 	memset(res->buf, 0, size);
-	// 如果是服务器端，将消息内容复制到缓冲区中。
-	if (!config.server_name)
-	{
-		strcpy(res->buf, MSG);
-		fprintf(stdout, "Server: going to send the message: '%s'\n", res->buf);
-	}
-	else
-		memset(res->buf, 0, size);
 
 	// COMMENT:分配内存缓冲区，并使用 ibv_reg_mr 函数注册内存区域（Memory Region）
 	// 这行代码设定了用于注册内存区域的访问标志。IBV_ACCESS_LOCAL_WRITE 允许本地写入，IBV_ACCESS_REMOTE_READ 和 IBV_ACCESS_REMOTE_WRITE 分别允许远程端读取和写入这块内存。
@@ -1211,6 +1220,36 @@ static void usage(const char *argv0)
 	fprintf(stdout, " -g, --gid_idx <git index> gid index to be used in GRH (default not used)\n");
 }
 /******************************************************************************
+ * Function: receive_message
+ *
+ * Input
+ * res pointer to resources structure where the message buffer is located
+ * entity a string representing the entity (e.g., "Server", "Client") calling this function
+ *
+ * Output
+ * Writes the received message into the res->buf buffer
+ *
+ * Returns
+ * 0 if the loop should continue; 1 if an exit condition (like receiving "exit") occurs
+ *
+ * Description
+ * Prompts the entity (Server/Client) to enter a message, receives the input,
+ * and checks for an exit condition. The function reads the message into the
+ * buffer provided in the resources structure (res->buf). If the message is "exit",
+ * the function returns 1, signaling the caller to terminate the process.
+ ******************************************************************************/
+static int receive_message(struct resources *res, const char *entity)
+{
+	printf("%s: Enter your message (type 'exit' to end): ", entity);
+	if (fgets(res->buf, MSG_SIZE, stdin) == NULL || strcmp(res->buf, "exit\n") == 0)
+	{
+		return 1; // return 1 indicates exit
+	}
+	// 除去可能的换行符
+	res->buf[strcspn(res->buf, "\n")] = 0;
+	return 0; // return 0 indicates continue
+}
+/******************************************************************************
  * Function: main
  *
  * Input
@@ -1307,112 +1346,80 @@ int main(int argc, char *argv[])
 		goto main_exit;
 	}
 
-	// 如果是服务器端，发送一条消息
-	if (!config.server_name)
-		if (post_send(&res, IBV_WR_SEND))
+	while (1)
+	{
+		int should_exit = 0; // 用于判断是否结束通信
+							 // 服务端逻辑
+		if (!config.server_name)
 		{
-			fprintf(stderr, "Server: failed to post sr\n");
-			goto main_exit;
+			should_exit = receive_message(&res, "Server");
+			if (should_exit)
+			{
+				rc = 0;
+				goto main_exit;
+			}
+			fprintf(stdout, "\nServer: Message is: '%s'\n\n", res.buf);
 		}
-
-	/* in both sides we expect to get a completion */
-	// COMMENT：客户端和服务器端等待完成事件:
-	// 调用 poll_completion 等待操作完成
-	if (poll_completion(&res))
-	{
-		fprintf(stderr, "poll completion failed\n");
-		goto main_exit;
-	}
-	/* after polling the completion we have the message in the client buffer too */
-
-	// 如果是客户端那么就打印buffer里面的信息
-	if (config.server_name)
-		fprintf(stdout, "\nClient: Message is: '%s'\n\n", res.buf);
-	else
-	{
-		// 读取用户输入
-		printf("Enter your message: ");
-		if (fgets(res.buf, MSG_SIZE, stdin) != NULL) // 假设 BUFFER_SIZE 是 res.buf 的大小
+		/* Sync so we are sure server side has data ready before client tries to read it */
+		if (sock_sync_data(res.sock, 1, "R", &temp_char)) /* just send a dummy char back and forth */
 		{
-			// 除去可能的换行符
-			res.buf[strcspn(res.buf, "\n")] = 0;
-			printf("Your message: '%s'\n", res.buf);
-		}
-		else
-		{
-			fprintf(stderr, "Error reading input.\n");
-			// 可以选择如何处理输入错误
-		}
-		fprintf(stdout, "\nServer: Message is: '%s'\n\n", res.buf);
-	}
-	/* Sync so we are sure server side has data ready before client tries to read it */
-	if (sock_sync_data(res.sock, 1, "R", &temp_char)) /* just send a dummy char back and forth */
-	{
-		fprintf(stderr, "sync error before RDMA ops\n");
-		rc = 1;
-		goto main_exit;
-	}
-	/* Now the client performs an RDMA read and then write on server.
-Note that the server has no idea these events have occured */
-
-	// COMMENT：如果是客户端，首先通过 RDMA Read 读取服务器端的数据，然后使用 RDMA Write 写入新数据到服务器端。
-	if (config.server_name)
-	{
-		/* First we read contens of server's buffer */
-		if (post_send(&res, IBV_WR_RDMA_READ))
-		{
-			fprintf(stderr, "Client: failed to post SR 2\n");
+			fprintf(stderr, "sync error before RDMA ops\n");
 			rc = 1;
 			goto main_exit;
 		}
-		if (poll_completion(&res))
-		{
-			fprintf(stderr, "Client: poll completion failed 2\n");
-			rc = 1;
-			goto main_exit;
-		}
-		fprintf(stdout, "Client: Contents of server's buffer: '%s'\n", res.buf);
+		/* Now the client performs an RDMA read and then write on server.
+	Note that the server has no idea these events have occured */
 
-		// 读取用户输入
-		printf("Enter your message: ");
-		if (fgets(res.buf, MSG_SIZE, stdin) != NULL) // 假设 BUFFER_SIZE 是 res.buf 的大小
+		// COMMENT：如果是客户端，首先通过 RDMA Read 读取服务器端的数据，然后使用 RDMA Write 写入新数据到服务器端。
+		if (config.server_name)
 		{
-			// 除去可能的换行符
-			res.buf[strcspn(res.buf, "\n")] = 0;
-			printf("Your message: '%s'\n", res.buf);
-		}
-		else
-		{
-			fprintf(stderr, "Error reading input.\n");
-			// 可以选择如何处理输入错误
+			/* First we read contens of server's buffer */
+			if (post_send(&res, IBV_WR_RDMA_READ))
+			{
+				fprintf(stderr, "Client: failed to post SR 2\n");
+				rc = 1;
+				goto main_exit;
+			}
+			if (poll_completion(&res))
+			{
+				fprintf(stderr, "Client: poll completion failed 2\n");
+				rc = 1;
+				goto main_exit;
+			}
+			fprintf(stdout, "Client: Contents of server's buffer: '%s'\n", res.buf);
+			should_exit = receive_message(&res, "Client");
+			if (should_exit)
+			{
+				rc = 0;
+				goto main_exit;
+			}
+			if (post_send(&res, IBV_WR_RDMA_WRITE))
+			{
+				fprintf(stderr, "Client: failed to post SR 3\n");
+				rc = 1;
+				goto main_exit;
+			}
+			if (poll_completion(&res))
+			{
+				fprintf(stderr, "Client: poll completion failed 3\n");
+				rc = 1;
+				goto main_exit;
+			}
 		}
 
-		fprintf(stdout, "Client: Now replacing it with: '%s'\n", res.buf);
-		if (post_send(&res, IBV_WR_RDMA_WRITE))
+		// 使用 sock_sync_data 函数进行简单的数据交换，确保客户端和服务器端同步。
+		/* Sync so server will know that client is done mucking with its memory */
+		if (sock_sync_data(res.sock, 1, "W", &temp_char)) /* just send a dummy char back and forth */
 		{
-			fprintf(stderr, "Client: failed to post SR 3\n");
+			fprintf(stderr, "sync error after RDMA ops\n");
 			rc = 1;
 			goto main_exit;
 		}
-		if (poll_completion(&res))
-		{
-			fprintf(stderr, "Client: poll completion failed 3\n");
-			rc = 1;
-			goto main_exit;
-		}
+		if (!config.server_name)
+			fprintf(stdout, "Server: Contents of server buffer: '%s'\n", res.buf);
+		rc = 0;
 	}
 
-	// 使用 sock_sync_data 函数进行简单的数据交换，确保客户端和服务器端同步。
-	/* Sync so server will know that client is done mucking with its memory */
-	if (sock_sync_data(res.sock, 1, "W", &temp_char)) /* just send a dummy char back and forth */
-	{
-		fprintf(stderr, "sync error after RDMA ops\n");
-		rc = 1;
-		goto main_exit;
-	}
-	if (!config.server_name)
-		fprintf(stdout, "Server: Contents of server buffer: '%s'\n", res.buf);
-	rc = 0;
 main_exit:
 
 	// 在 main_exit 标签处，调用 resources_destroy 清理所有资源。
