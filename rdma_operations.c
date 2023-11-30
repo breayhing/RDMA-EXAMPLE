@@ -1,5 +1,4 @@
-#include<rdma_operations.h>
-
+#include <rdma_operations.h>
 struct config_t config = {
 	NULL,  /* dev_name */
 	NULL,  /* server_name */
@@ -29,7 +28,7 @@ port：服务的端口号。
 * Description
 否则，在指定端口上监听传入连接。
 ******************************************************************************/
-static int sock_connect(const char *servername, int port)
+int sock_connect(const char *servername, int port)
 {
 	// ：struct addrinfo *resolved_addr 和 *iterator: 用于存储 getaddrinfo 函数返回的地址信息和遍历这些地址的迭代器。
 	struct addrinfo *resolved_addr = NULL;
@@ -178,7 +177,7 @@ End of socket operations
 * poll the queue until MAX_POLL_CQ_TIMEOUT milliseconds have passed.
 *
 ******************************************************************************/
-static int poll_completion(struct resources *res)
+int poll_completion(struct resources *res)
 {
 	// 定义并初始化用于轮询的变量，包括 struct ibv_wc wc（用于存储完成事件的详情）和时间相关的变量（用于控制轮询超时）
 	struct ibv_wc wc;
@@ -238,7 +237,7 @@ static int poll_completion(struct resources *res)
 * Description
 * This function will create and post a send work request
 ******************************************************************************/
-static int post_send(struct resources *res, int opcode)
+int post_send(struct resources *res, int opcode)
 {
 	// 在 RDMA 操作中，发送工作请求用于指定如何发送数据（例如，普通发送、RDMA 读或写等）。
 	// sr 的字段包括散布/聚集元素的列表、操作类型（opcode）、发送标志等
@@ -254,7 +253,7 @@ static int post_send(struct resources *res, int opcode)
 	sge.addr = (uintptr_t)res->buf; // 设置 sge.addr 为要发送或读写的数据的地址
 	sge.length = MSG_SIZE;			// 设置 sge.length 为要发送或读写的数据的长度。
 	sge.lkey = res->mr->lkey;		// 设置 sge.lkey 为关联内存区域的本地密钥。
-	memset(&sr, 0, sizeof(sr)); // 使用 memset 初始化发送工作请求 sr。
+	memset(&sr, 0, sizeof(sr));		// 使用 memset 初始化发送工作请求 sr。
 	sr.next = NULL;
 	sr.wr_id = 0;
 	sr.sg_list = &sge;				   // 设置 sr.sg_list 指向散布/聚集条目
@@ -293,21 +292,21 @@ static int post_send(struct resources *res, int opcode)
 	return rc;
 }
 /******************************************************************************
-* Function: post_receive
-* Input
-* res pointer to resources structure
-* static int post_receive(struct resources *res): 该函数接受一个指向包含 RDMA 资源的 resources 结构体的指针 res
-*
-* Output
-* none
-*
-* Returns
-* 0 on success, error code on failure
-*
-* Description
-*
-******************************************************************************/
-static int post_receive(struct resources *res)
+ * Function: post_receive
+ * Input
+ * res pointer to resources structure
+ *  int post_receive(struct resources *res): 该函数接受一个指向包含 RDMA 资源的 resources 结构体的指针 res
+ *
+ * Output
+ * none
+ *
+ * Returns
+ * 0 on success, error code on failure
+ *
+ * Description
+ *
+ ******************************************************************************/
+int post_receive(struct resources *res)
 {
 	struct ibv_recv_wr rr;
 	struct ibv_sge sge;
@@ -347,7 +346,7 @@ static int post_receive(struct resources *res)
  * Description
  * res is initialized to default values
  ******************************************************************************/
-static void resources_init(struct resources *res)
+void resources_init(struct resources *res)
 {
 	memset(res, 0, sizeof *res);
 	// res->sock = -1;: 将 sock 成员（套接字文件描述符）设置为 -1。这是一个常用的技巧，用于表示该套接字尚未被分配或初始化
@@ -370,7 +369,7 @@ static void resources_init(struct resources *res)
 * are stored in res.
 通过正确创建和配置这些资源，RDMA 应用程序能够进行高效的网络通信和远程直接内存访问操作。
 *****************************************************************************/
-static int resources_create(struct resources *res)
+int resources_create(struct resources *res)
 {
 
 	// dev_list 是一个指向 InfiniBand 设备指针数组的指针。这个数组用于存储系统中检测到的所有 IB 设备
@@ -401,7 +400,6 @@ static int resources_create(struct resources *res)
 
 	// rc 是一个返回码变量，用于存储函数的执行结果。成功时为 0，失败时为非零值。
 	int rc = 0;
-
 
 	// 根据配置，函数尝试建立一个 TCP 连接。在客户端模式下，它连接到指定的服务器和端口；在服务器模式下，它监听指定的端口。
 	/* if client side */
@@ -644,20 +642,20 @@ resources_create_exit:
 	return rc;
 }
 /******************************************************************************
-* Function: modify_qp_to_init
-*
-* Input
-* qp QP to transition
-*
-* Output
-* none
-*
-* Returns
-* 0 on success, ibv_modify_qp failure code on failure
-*
-* Description
-******************************************************************************/
-static int modify_qp_to_init(struct ibv_qp *qp)
+ * Function: modify_qp_to_init
+ *
+ * Input
+ * qp QP to transition
+ *
+ * Output
+ * none
+ *
+ * Returns
+ * 0 on success, ibv_modify_qp failure code on failure
+ *
+ * Description
+ ******************************************************************************/
+int modify_qp_to_init(struct ibv_qp *qp)
 {
 	struct ibv_qp_attr attr;
 	int flags;
@@ -686,23 +684,23 @@ static int modify_qp_to_init(struct ibv_qp *qp)
 	return rc;
 }
 /******************************************************************************
-* Function: modify_qp_to_rtr
-*
-* Input
-* qp QP to transition
-* remote_qpn remote QP number
-* dlid destination LID
-* dgid destination GID (mandatory for RoCEE)
-*
-* Output
-* none
-*
-* Returns
-* 0 on success, ibv_modify_qp failure code on failure
-*
-* Description
-******************************************************************************/
-static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dlid, uint8_t *dgid)
+ * Function: modify_qp_to_rtr
+ *
+ * Input
+ * qp QP to transition
+ * remote_qpn remote QP number
+ * dlid destination LID
+ * dgid destination GID (mandatory for RoCEE)
+ *
+ * Output
+ * none
+ *
+ * Returns
+ * 0 on success, ibv_modify_qp failure code on failure
+ *
+ * Description
+ ******************************************************************************/
+int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dlid, uint8_t *dgid)
 {
 	/*
 	参数部分：
@@ -793,7 +791,7 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
  * Description
 函数的目的是将队列对（Queue Pair, QP）从准备接收（Ready to Receive, RTR）状态转换到准备发送（Ready to Send, RTS）状态。
  ******************************************************************************/
-static int modify_qp_to_rts(struct ibv_qp *qp)
+int modify_qp_to_rts(struct ibv_qp *qp)
 {
 	struct ibv_qp_attr attr;
 	int flags;
@@ -846,7 +844,7 @@ static int modify_qp_to_rts(struct ibv_qp *qp)
  * 连接队列对，将服务端变成待接受状态，客户端变成待发送状态
  * 函数的作用是配置和连接队列对（Queue Pair, QP），以便进行 RDMA 通信。这个过程包括设置队列对的状态，以及交换所需的连接信息。以下是函数的详细解释：
  ******************************************************************************/
-static int connect_qp(struct resources *res)
+int connect_qp(struct resources *res)
 {
 
 	// 这个结构体用于存储本地连接所需的信息，如本地队列对（QP）的编号、内存区域（MR）的键（key）、本地标识符（LID）和全局标识符（GID）。这些信息将被发送到远程端以建立连接。
@@ -983,7 +981,7 @@ connect_qp_exit:
  * Cleanup and deallocate all resources used
  * 就是调用各个函数来释放空间和资源
  ******************************************************************************/
-static int resources_destroy(struct resources *res)
+int resources_destroy(struct resources *res)
 {
 	int rc = 0;
 	if (res->qp)
@@ -1041,7 +1039,7 @@ static int resources_destroy(struct resources *res)
  * Description
  * Print out config information
  ******************************************************************************/
-static void print_config(void)
+void print_config(void)
 {
 	fprintf(stdout, " ------------------------------------------------\n");
 	fprintf(stdout, " Device name : \"%s\"\n", config.dev_name);
@@ -1069,7 +1067,7 @@ static void print_config(void)
  * Description
  * print a description of command line syntax
  ******************************************************************************/
-static void usage(const char *argv0)
+void usage(const char *argv0)
 {
 	fprintf(stdout, "Usage:\n");
 	fprintf(stdout, " %s start a server and wait for connection\n", argv0);
@@ -1100,7 +1098,7 @@ static void usage(const char *argv0)
  * buffer provided in the resources structure (res->buf). If the message is "exit",
  * the function returns 1, signaling the caller to terminate the process.
  ******************************************************************************/
-static int receive_message(struct resources *res, const char *entity)
+int receive_message(struct resources *res, const char *entity)
 {
 	printf("%s: Enter your message (type 'exit' to end): ", entity);
 	if (fgets(res->buf, MSG_SIZE, stdin) == NULL || strcmp(res->buf, "exit\n") == 0)
